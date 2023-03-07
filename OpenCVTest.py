@@ -1,5 +1,6 @@
 import cv2
 from matplotlib import pyplot as plt
+import numpy as np
 
 #process a colored image
 def procImgClr(frame):
@@ -17,14 +18,15 @@ def procImg(frame):
 
 def procRed(frame):
     cv2.convertScaleAbs(frame, 2)
-    blue,green,red = cv2.split(frame)
     frame_height, frame_width = frame.shape[:2]
 
-    #for y in range(frame_width):
-        #for x in range(frame_height):
-            #red[x,y] -= blue[x,y] + green[x,y]
+    lower = np.array([255, 255, 255])
+    upper = np.array([0, 0, 255])
 
-    return red
+    mask = cv2.inRange(frame, lower, upper)
+    masked = cv2.bitwise_and(frame,frame, mask=mask)
+
+    return frame - masked
 
 
 def findAverageOfPixels(frame):
