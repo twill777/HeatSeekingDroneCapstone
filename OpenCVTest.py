@@ -4,14 +4,14 @@ import numpy as np
 
 #process a colored image
 def procImgClr(frame):
-    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY, frame)
-    #frame = procRed(frame)
+    #frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY, frame)
+    frame = procRed(frame)
     
     return procImg(frame)
 
 #proecess a B/W image
 def procImg(frame):
-    frame = cv2.GaussianBlur(frame,(15,13),0)
+    frame = cv2.GaussianBlur(frame,(7,7),0)
     r, frame = cv2.threshold(frame,0,255,cv2.THRESH_BINARY+cv2.THRESH_OTSU)
     return frame
 
@@ -20,13 +20,10 @@ def procRed(frame):
     cv2.convertScaleAbs(frame, 2)
     frame_height, frame_width = frame.shape[:2]
 
-    lower = np.array([255, 255, 255])
-    upper = np.array([0, 0, 255])
+    frame_HSV = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+    frame_threshold = cv2.inRange(frame_HSV, (120, 120, 80), (170, 240, 255))
 
-    mask = cv2.inRange(frame, lower, upper)
-    masked = cv2.bitwise_and(frame,frame, mask=mask)
-
-    return frame - masked
+    return frame_threshold
 
 
 def findAverageOfPixels(frame):
@@ -50,7 +47,7 @@ def findAverageOfPixels(frame):
     if whiteCount == 0:
         whiteCount = 1
 
-    return ((yAvg * extraScaledown) // whiteCount, (xAvg * extraScaledown) // whiteCount)
+    return [(yAvg * extraScaledown) // whiteCount, (xAvg * extraScaledown) // whiteCount]
 
 OPENCV_OBJECT_TRACKERS = {
 		"kcf": cv2.TrackerKCF_create
@@ -86,6 +83,8 @@ mtFrame = cv2.cvtColor(mtFrame, cv2.COLOR_GRAY2BGR)
     
 lastFramesProc = []
 lastFrames = []
+
+lastTargetPos = [0, 0]
     
 for i in range(keptFrames):
     lastFramesProc.append(cleanFrame.copy())
@@ -121,6 +120,8 @@ while True:
     if current_frame % frameSkips != 0:
         continue
     ret, frame = video.read()
+    if frame is None:
+        break
     frame = cv2.resize(frame, [frame_width//imageScaledown, frame_height//imageScaledown])
 
     if not ret:
@@ -144,7 +145,13 @@ while True:
     lastFramesProc[0] = cleanFrame.copy()
     lastFrames[0] = frame.copy()
 
-    motionCenter = findAverageOfPixels(mtFrame)
+    motionCenter = findAverageOfPixels(cleanFrame)
+    smoothCenter = motionCenter.copy()
+    if lastTargetPos != [0, 0] and motionCenter != [0, 0]:
+        smoothCenter[0] = (0.15 * motionCenter[0]) + (0.85 * lastTargetPos[0])
+        smoothCenter[1] = (0.15 * motionCenter[1]) + (0.85 * lastTargetPos[1])
+    lastTargetPos = smoothCenter
+
     mtFrame = cv2.cvtColor(mtFrame, cv2.COLOR_GRAY2BGR)
     timer = cv2.getTickCount()
     fps = cv2.getTickFrequency() / (cv2.getTickCount() - timer)
@@ -213,8 +220,10 @@ while True:
                             cv2.FONT_HERSHEY_SIMPLEX, 0.75,(0,0,255),2)
         # =======================
 
-    cv2.line(frame, (int(motionCenter[0]), 0), (int(motionCenter[0]), frame_height//imageScaledown), (0, 0, 255), 3)
-    cv2.line(frame, (0, int(motionCenter[1])), (frame_width//imageScaledown, int(motionCenter[1])), (0, 0, 255), 3)
+    #cv2.line(frame, (int(motionCenter[0]), 0), (int(motionCenter[0]), frame_height//imageScaledown), (0, 0, 255), 3)
+    #cv2.line(frame, (0, int(motionCenter[1])), (frame_width//imageScaledown, int(motionCenter[1])), (0, 0, 255), 3)
+    cv2.line(frame, (int(smoothCenter[0]), 0), (int(smoothCenter[0]), frame_height//imageScaledown), (0, 255, 255), 3)
+    cv2.line(frame, (0, int(smoothCenter[1])), (frame_width//imageScaledown, int(smoothCenter[1])), (0, 255, 255), 3)
 
     cv2.line(mtFrame, (int(motionCenter[0]), 0), (int(motionCenter[0]), frame_height//imageScaledown), (0, 0, 255), 3)
     cv2.line(mtFrame, (0, int(motionCenter[1])), (frame_width//imageScaledown, int(motionCenter[1])), (0, 0, 255), 3)
@@ -230,8 +239,6 @@ while True:
     cv2.imshow("Clean Frame", cleanFrame)
     cv2.imshow("Motion Tracker", mtFrame)
     mtOutput.write(mtFrame)
-
-    cv2.imshow("Red", procRed(frame))
 
     k = cv2.waitKey(1) & 0xff
     if k == 27 : break
