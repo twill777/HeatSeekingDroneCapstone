@@ -17,7 +17,7 @@ isAlive = False
 imageFlag = 0
 globalNum = 1
 
-
+#Class was used for the built in Drone Vision open_video() method
 class UserVision:
     def __init__(self, vision):
         self.index = 0
@@ -35,6 +35,7 @@ class UserVision:
             self.index += 1
             imageFlag = 1
 
+#currently unused, was used for some image saving
 def draw_current_photo():
 
     #Quick demo of returning an image to show in the user window.  Clearly one would want to make this a dynamic image
@@ -55,6 +56,8 @@ def draw_current_photo():
         return qimage
     else:
         return None
+
+#whole section was an attempt to do image saving as a asynchronous thread but was not working
 """
 async def read_stream(stream):
     frame_count = 0
@@ -85,22 +88,31 @@ def main():
     thread.start()
     thread.join()
 """
+
 if __name__ == "__main__":
+    #Connecting to the drone
     anafi = Anafi(drone_type="Anafi", ip_address="192.168.42.1")
     print("Connecting to drone")
     success = anafi.connect(5)
 
     if success:
         print("Connnected!")
+        #declarations to use the built in open_video() method, currently un used
         anafiVision = DroneVision(drone_object=anafi, model=Model.ANAFI)
-
         userVision = UserVision(anafiVision)
         anafiVision.set_user_callback_function(userVision.save_pictures,user_callback_args=None)
+
         #success = anafiVision.open_video()
+
+        #this commented out subprocess livestreams the footage but does not save anything
         #subprocess.Popen("ffplay -fflags nobuffer -flags low_delay -framedrop -strict experimental rtsp://192.168.42.1/live ",
                         #shell=True, stderr=subprocess.PIPE, stdout=subprocess.PIPE)
+
+        #subprocess used to save frames to the project folder to be used in the image processing
         streamProc = subprocess.Popen("ffmpeg -i rtsp://192.168.42.1/live -r 15 Anafi_Vision%06d.png",
                          shell=True, stderr=subprocess.PIPE, stdout=subprocess.PIPE, bufsize=10**8)
+
+        #an attempt to get images in a different manner
         """
         ffmpeg_cmd = ['ffmpeg',
                       '-i', 'rtsp://192.168.42.1/live',
@@ -138,14 +150,17 @@ if __name__ == "__main__":
             cv2.waitKey(1)
             print("4")
         """
-        main()
+        #used for asynchronous thread attempt
+        #main()
 
         autoFlag = 0
         delayFlag = 0
         stopFlag = 0
         if success:
             lastkey = None
+            #This while loop handles all drone controls to keyboard
             while True:
+                #was used in a previous attempt for image capturign
                 """if path.exists():
                     img = cv2.imread("Anafi_Vision%06d.png" % globalNum)
                     imageFlag = 0
@@ -202,6 +217,7 @@ if __name__ == "__main__":
                     print("Up")
                     lastkey = '4'
                     stopFlag = 1
+                #if 5 is pressed, would enter autonomous flying mode
                 elif keyboard.is_pressed('5'):
                     print("Autonomous Flying Engaged")
                     autoFlag = 1
