@@ -156,6 +156,12 @@ while True:
     timer = cv2.getTickCount()
     fps = cv2.getTickFrequency() / (cv2.getTickCount() - timer)
 
+    cv2.convertScaleAbs(frame, 2)
+    frame_HSV = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+    frame_threshold = cv2.inRange(frame_HSV, (120, 120, 80), (170, 240, 255))
+    frame1 = cv2.GaussianBlur(frame_threshold,(7,7),0)
+    r, frame2 = cv2.threshold(frame1,0,255,cv2.THRESH_BINARY+cv2.THRESH_OTSU)
+
     if enableCVTracking:
         ret1, bbox1 = tracker.update(frame)
         ret2, bbox2 = tracker2.update(frame)
@@ -220,10 +226,8 @@ while True:
                             cv2.FONT_HERSHEY_SIMPLEX, 0.75,(0,0,255),2)
         # =======================
 
-    #cv2.line(frame, (int(motionCenter[0]), 0), (int(motionCenter[0]), frame_height//imageScaledown), (0, 0, 255), 3)
-    #cv2.line(frame, (0, int(motionCenter[1])), (frame_width//imageScaledown, int(motionCenter[1])), (0, 0, 255), 3)
-    cv2.line(frame, (int(smoothCenter[0]), 0), (int(smoothCenter[0]), frame_height//imageScaledown), (0, 255, 255), 3)
-    cv2.line(frame, (0, int(smoothCenter[1])), (frame_width//imageScaledown, int(smoothCenter[1])), (0, 255, 255), 3)
+    #cv2.line(frame, (int(smoothCenter[0]), 0), (int(smoothCenter[0]), frame_height//imageScaledown), (0, 255, 255), 3)
+    #cv2.line(frame, (0, int(smoothCenter[1])), (frame_width//imageScaledown, int(smoothCenter[1])), (0, 255, 255), 3)
 
     cv2.line(mtFrame, (int(motionCenter[0]), 0), (int(motionCenter[0]), frame_height//imageScaledown), (0, 0, 255), 3)
     cv2.line(mtFrame, (0, int(motionCenter[1])), (frame_width//imageScaledown, int(motionCenter[1])), (0, 0, 255), 3)
@@ -238,6 +242,12 @@ while True:
 
     cv2.imshow("Clean Frame", cleanFrame)
     cv2.imshow("Motion Tracker", mtFrame)
+
+    cv2.imshow("Proc Frame HSV", frame_HSV)
+    cv2.imshow("Proc Frame TH", frame_threshold)
+    cv2.imshow("Proc Frame 1", frame1)
+    cv2.imshow("Proc Frame 2", frame2)
+
     mtOutput.write(mtFrame)
 
     k = cv2.waitKey(1) & 0xff
