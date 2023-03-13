@@ -13,6 +13,7 @@ def procImgClr(frame):
 def procImg(frame):
     frame = cv2.GaussianBlur(frame,(7,7),0)
     r, frame = cv2.threshold(frame,0,255,cv2.THRESH_BINARY+cv2.THRESH_OTSU)
+    frame = cv2.GaussianBlur(frame,(9,9),0)
     return frame
 
 
@@ -49,6 +50,34 @@ def findAverageOfPixels(frame):
 
     return [(yAvg * extraScaledown) // whiteCount, (xAvg * extraScaledown) // whiteCount]
 
+
+def drawHistogram(frame):
+    frame_height, frame_width = frame.shape[:2]
+
+    # Histogram x vals, y vals, and [xmax, ymax]
+    histogramValues = [[], [], [0,0]]
+
+    for y in range(frame_width):
+        histogramValues[0].append(0)
+    for x in range(frame_height):
+        histogramValues[1].append(0)
+            
+    for y in range(frame_width):
+        for x in range(frame_height):
+            f = frame[x, y]
+            histogramValues[0][y] += f
+            histogramValues[1][x] += f
+            if histogramValues[2][0] < f:
+                histogramValues[2][0] = f
+            if histogramValues[2][1] < f:
+                histogramValues[2][1] = f
+
+    histogramValues[0] = [x / (255 * frame_height) for x in histogramValues[0]]
+    histogramValues[1] = [y / (255 * frame_height) for y in histogramValues[1]]
+
+    return histogramValues
+
+
 OPENCV_OBJECT_TRACKERS = {
 		"kcf": cv2.TrackerKCF_create
 	}
@@ -61,7 +90,7 @@ enableCVTracking = False
 frameSkips = 25
 
 video = None
-video = cv2.VideoCapture("test_videoRed.MOV")
+video = cv2.VideoCapture("test_video2.mp4")
 frame = None
 
 t = OPENCV_OBJECT_TRACKERS["kcf"]
@@ -94,6 +123,9 @@ output = cv2.VideoWriter(name+'.mp4',
                         cv2.VideoWriter_fourcc(*'mp4v'), 60.0, 
                         (frame_width//imageScaledown, frame_height//imageScaledown), True)
 mtOutput = cv2.VideoWriter(name+'_MT.mp4', 
+                        cv2.VideoWriter_fourcc(*'mp4v'), 60.0, 
+                        (frame_width//imageScaledown, frame_height//imageScaledown), True)
+trackerOutput = cv2.VideoWriter(name+'_Tracking.mp4', 
                         cv2.VideoWriter_fourcc(*'mp4v'), 60.0, 
                         (frame_width//imageScaledown, frame_height//imageScaledown), True)
 if not ret:
@@ -145,6 +177,7 @@ while True:
     lastFramesProc[0] = cleanFrame.copy()
     lastFrames[0] = frame.copy()
 
+    histo = drawHistogram(cleanFrame)
     motionCenter = findAverageOfPixels(cleanFrame)
     smoothCenter = motionCenter.copy()
     if lastTargetPos != [0, 0] and motionCenter != [0, 0]:
@@ -161,6 +194,7 @@ while True:
     frame_threshold = cv2.inRange(frame_HSV, (120, 120, 80), (170, 240, 255))
     frame1 = cv2.GaussianBlur(frame_threshold,(7,7),0)
     r, frame2 = cv2.threshold(frame1,0,255,cv2.THRESH_BINARY+cv2.THRESH_OTSU)
+    frame3 = cv2.GaussianBlur(frame2,(9,9),0)
 
     if enableCVTracking:
         ret1, bbox1 = tracker.update(frame)
@@ -226,19 +260,50 @@ while True:
                             cv2.FONT_HERSHEY_SIMPLEX, 0.75,(0,0,255),2)
         # =======================
 
-    #cv2.line(frame, (int(smoothCenter[0]), 0), (int(smoothCenter[0]), frame_height//imageScaledown), (0, 255, 255), 3)
-    #cv2.line(frame, (0, int(smoothCenter[1])), (frame_width//imageScaledown, int(smoothCenter[1])), (0, 255, 255), 3)
+    cv2.line(frame, (int(smoothCenter[0]), 0), (int(smoothCenter[0]), frame_height//imageScaledown), (0, 255, 255), 3)
+    cv2.line(frame, (0, int(smoothCenter[1])), (frame_width//imageScaledown, int(smoothCenter[1])), (0, 255, 255), 3)
 
-    cv2.line(mtFrame, (int(motionCenter[0]), 0), (int(motionCenter[0]), frame_height//imageScaledown), (0, 0, 255), 3)
-    cv2.line(mtFrame, (0, int(motionCenter[1])), (frame_width//imageScaledown, int(motionCenter[1])), (0, 0, 255), 3)
+    cleanFrame = cv2.cvtColor(cleanFrame, cv2.COLOR_GRAY2BGR)
 
-    cv2.putText(frame, name+" Tracker", (100,20), 
-                cv2.FONT_HERSHEY_SIMPLEX, 0.75, (50,170,50),2)
-    cv2.putText(frame, "FPS : " + str(int(fps)), (100,50), 
-                cv2.FONT_HERSHEY_SIMPLEX, 0.75, (50,170,50),2)
+    shape_height, shape_width = frame.shape[:2]
+
+    first_coords = [0, 0]
+    last_coords = [0, 0]
+    
+    for x in range(shape_width):
+        hx = int((histo[0][x] * frame_height))
+
+        if hx > histo[2][0] * 0.1:
+            last_coords[0] = x
+            if first_coords[0] == 0:
+                first_coords[0] = x
+
+        cv2.circle(cleanFrame, (x, hx), 1, (255, 255, 0), 2)
+
+    for y in range(shape_height):
+        hy = int((histo[1][y] * frame_width))
+
+        if hy > histo[2][1] * 0.1:
+            last_coords[1] = y
+            if first_coords[1] == 0:
+                first_coords[1] = y
+
+        cv2.circle(cleanFrame, (hy, y), 1, (0, 255, 255), 2)
+       
+    p1 = (int(first_coords[0]), int(first_coords[1]))
+    p2 = (int(last_coords[0]), int(last_coords[1]))
+    cv2.rectangle(cleanFrame, p1, p2, (255,0,0), 2, 1)
+
+    rad = int(np.sqrt(((motionCenter[0] - smoothCenter[0]) ** 2) + ((motionCenter[1] - smoothCenter[1]) ** 2)))
+
+    cv2.line(cleanFrame, (int(motionCenter[0]), 0), (int(motionCenter[0]), frame_height//imageScaledown), (0, 0, 255), 2)
+    cv2.line(cleanFrame, (0, int(motionCenter[1])), (frame_width//imageScaledown, int(motionCenter[1])), (0, 0, 255), 2)
+    cv2.line(cleanFrame, (int(motionCenter[0]), int(motionCenter[1])), (int(smoothCenter[0]), int(smoothCenter[1])), (0, 255, 0), 2)
+    cv2.circle(cleanFrame, (int(smoothCenter[0]), int(smoothCenter[1])), rad, (0, 255, 0), 2)
 
     cv2.imshow("Tracking", frame)
     output.write(frame)
+    trackerOutput.write(frame)
 
     cv2.imshow("Clean Frame", cleanFrame)
     cv2.imshow("Motion Tracker", mtFrame)
@@ -247,8 +312,10 @@ while True:
     cv2.imshow("Proc Frame TH", frame_threshold)
     cv2.imshow("Proc Frame 1", frame1)
     cv2.imshow("Proc Frame 2", frame2)
+    cv2.imshow("Proc Frame 3", frame3)
 
-    mtOutput.write(mtFrame)
+    trackerOutput.write(mtFrame)
+    mtOutput.write(cleanFrame)
 
     k = cv2.waitKey(1) & 0xff
     if k == 27 : break
@@ -256,4 +323,5 @@ while True:
 video.release()
 output.release()
 mtOutput.release()
+trackerOutput.release()
 cv2.destroyAllWindows()
