@@ -1,6 +1,10 @@
 from __future__ import print_function
 import cv2
 import argparse
+import numpy as np
+from pynput.mouse import Controller
+
+
 max_value = 255
 max_value_H = 360//2
 low_H = 0
@@ -17,42 +21,82 @@ low_V_name = 'Low V'
 high_H_name = 'High H'
 high_S_name = 'High S'
 high_V_name = 'High V'
+
+mouse = Controller()
+centerCoords = [0, 0]
+showColor = True
+
+colorPicker = np.zeros((720, 1280, 3), np.uint8)
+colorPickerLow = np.ones((720, 1280, 3), np.uint8)
+
 def on_low_H_thresh_trackbar(val):
     global low_H
     global high_H
     low_H = val
     low_H = min(high_H-1, low_H)
-    cv.setTrackbarPos(low_H_name, window_detection_name, low_H)
+    cv2.setTrackbarPos(low_H_name, window_detection_name, low_H)
 def on_high_H_thresh_trackbar(val):
     global low_H
     global high_H
     high_H = val
     high_H = max(high_H, low_H+1)
-    cv.setTrackbarPos(high_H_name, window_detection_name, high_H)
+    cv2.setTrackbarPos(high_H_name, window_detection_name, high_H)
 def on_low_S_thresh_trackbar(val):
     global low_S
     global high_S
     low_S = val
     low_S = min(high_S-1, low_S)
-    cv.setTrackbarPos(low_S_name, window_detection_name, low_S)
+    cv2.setTrackbarPos(low_S_name, window_detection_name, low_S)
 def on_high_S_thresh_trackbar(val):
     global low_S
     global high_S
     high_S = val
     high_S = max(high_S, low_S+1)
-    cv.setTrackbarPos(high_S_name, window_detection_name, high_S)
+    cv2.setTrackbarPos(high_S_name, window_detection_name, high_S)
 def on_low_V_thresh_trackbar(val):
     global low_V
     global high_V
     low_V = val
     low_V = min(high_V-1, low_V)
-    cv.setTrackbarPos(low_V_name, window_detection_name, low_V)
+    cv2.setTrackbarPos(low_V_name, window_detection_name, low_V)
 def on_high_V_thresh_trackbar(val):
     global low_V
     global high_V
     high_V = val
     high_V = max(high_V, low_V+1)
     cv2.setTrackbarPos(high_V_name, window_detection_name, high_V)
+
+def on_mouse(event,x,y,flags,param):
+    global showColor
+
+    if event == cv2.EVENT_MOUSEMOVE:
+        centerCoords[0] = x
+        centerCoords[1] = y
+    if event == cv2.EVENT_LBUTTONDOWN and not showColor:
+        showColor = True
+        global low_H
+        global low_S
+        global low_V
+        global high_H
+        global high_S
+        global high_V
+
+        h, s, v = cv2.split(colorPicker)
+
+        high_H = (int(np.max(h)) * max_value_H) // max_value
+        high_S = int(np.max(s))
+        high_V = int(np.max(v))
+
+        low_H = (int(np.min(h[np.where(h > 0)])) * max_value_H) // max_value
+        low_S = int(np.min(s[np.where(s > 0)]))
+        low_V = int(np.min(v[np.where(v > 0)]))
+
+        print(low_H, low_S, low_V)
+        print(high_H)
+        print(high_S)
+        print(high_V)
+
+
 parser = argparse.ArgumentParser(description='Code for Thresholding Operations using inRange tutorial.')
 parser.add_argument('--camera', help='Camera divide number.', default=0, type=int)
 args = parser.parse_args()
@@ -73,20 +117,47 @@ if not cap.isOpened():
     raise IOError("Cannot open webcam")
 
 while True:
-    
     ret, frame = cap.read()
     if frame is None:
         break
+
     frame_HSV = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
     frame_threshold = cv2.inRange(frame_HSV, (low_H, low_S, low_V), (high_H, high_S, high_V))
-    
-    
-    cv2.imshow(window_capture_name, frame)
-    cv2.imshow(window_detection_name, frame_threshold)
-    
+    frame_threshold = cv2.cvtColor(frame_threshold, cv2.COLOR_GRAY2BGR)
+    frame_filteredColor = cv2.bitwise_and(frame, frame_threshold)
+
+    radius = 30
+
+    colorPicker = np.zeros((720, 1280, 3), np.uint8)
+    colorPickerLow = np.ones((720, 1280, 3), np.uint8)
+    mask = cv2.circle(colorPicker, centerCoords, radius, (255, 255, 255), -1)
+    cv2.cvtColor(frame, cv2.COLOR_HSV2BGR)
+    colorPicker = cv2.bitwise_and(frame, mask)
+    colorPickerLow = cv2.bitwise_and(colorPicker, mask)
+
+    h, s, v = cv2.split(colorPicker)
+
+    mh = h[h > 0].mean()
+    ms = s[s > 0].mean()
+    mv = v[v > 0].mean()
+
+    frame = cv2.circle(frame, centerCoords, radius, (mh, ms, mv), -1)
+
+    cv2.namedWindow(window_capture_name)
+    cv2.setMouseCallback(window_capture_name, on_mouse, window_capture_name)
+    cv2.setMouseCallback(window_capture_name, on_mouse, window_capture_name)
+
+    if showColor:
+        cv2.imshow(window_capture_name, colorPickerLow)
+    else:
+        cv2.imshow(window_capture_name, frame)
+
     key = cv2.waitKey(30)
     if key == ord('q') or key == 27:
         break
+
+    if key == ord('w'):
+        showColor = not showColor
 
 cap.release()
 cv2.destroyAllWindows()
