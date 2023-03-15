@@ -75,182 +75,175 @@ def drawHistogram(frame):
     return histogramValues
 
 
-imageScaledown = 4
-dragWeight = 0.1
+def trackVideo(inName, outName):
+    imageScaledown = 4
+    dragWeight = 0.1
 
-# If the target is on this outer percent horizontally/vertically, move in that direction
-moveBounds = [0.25, 0.35]
+    # If the target is on this outer percent horizontally/vertically, move in that direction
+    moveBounds = [0.25, 0.35]
 
-# Only run image processing on each nth frame
-frameSkips = 25
+    # Only run image processing on each nth frame
+    frameSkips = 25
 
-video = None
-video = cv2.VideoCapture("test_videoRed.MOV")
-frame = None
-
-name = "CapstoneTracker"
+    video = None
+    video = cv2.VideoCapture(inName)
+    frame = None
     
-ret, frame = video.read()
-frame_height, frame_width = frame.shape[:2]
-frame = cv2.resize(frame, [frame_width//imageScaledown, frame_height//imageScaledown])
-    
-cleanFrame = procImgClr(frame)
-
-lastTargetPos = [0, 0]
-
-output = cv2.VideoWriter(name+'.mp4', 
-                        cv2.VideoWriter_fourcc(*'mp4v'), 60.0, 
-                        (frame_width//imageScaledown, frame_height//imageScaledown), True)
-trackerOutput = cv2.VideoWriter(name+'_Tracking.mp4', 
-                        cv2.VideoWriter_fourcc(*'mp4v'), 60.0, 
-                        (frame_width//imageScaledown * 3, frame_height//imageScaledown * 3), True)
-if not ret:
-    print('cannot read the video')
-
-mtInitialized = False
-
-current_frame = 0
-
-while True:
-    current_frame += 1
-    if current_frame % frameSkips != 0:
-        continue
     ret, frame = video.read()
-    if frame is None:
-        break
+    frame_height, frame_width = frame.shape[:2]
     frame = cv2.resize(frame, [frame_width//imageScaledown, frame_height//imageScaledown])
-
-    if not ret:
-        print('something went wrong')
-        break
-        
+    
     cleanFrame = procImgClr(frame)
 
-    histo = drawHistogram(cleanFrame)
-    motionCenter = findAverageOfPixels(cleanFrame)
-    smoothCenter = motionCenter.copy()
-    if lastTargetPos != [0, 0] and motionCenter != [0, 0]:
-        smoothCenter[0] = (dragWeight * motionCenter[0]) + ((1-dragWeight) * lastTargetPos[0])
-        smoothCenter[1] = (dragWeight * motionCenter[1]) + ((1-dragWeight) * lastTargetPos[1])
-    lastTargetPos = smoothCenter
+    lastTargetPos = [0, 0]
+    lastObjDist = 0
 
-    timer = cv2.getTickCount()
-    fps = cv2.getTickFrequency() / (cv2.getTickCount() - timer)
+    trackerOutput = cv2.VideoWriter(outName+'.mp4', 
+                            cv2.VideoWriter_fourcc(*'mp4v'), 60.0, 
+                            (frame_width//imageScaledown * 3, frame_height//imageScaledown * 3), True)
+    if not ret:
+        print('cannot read the video')
 
-    # Recreate processing frames
-    cv2.convertScaleAbs(frame, 2)
-    frame_HSV = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-    frame_mask = cv2.inRange(frame_HSV, (120, 120, 80), (170, 240, 255))
-    frame1 = cv2.GaussianBlur(frame_mask,(15,15),0)
-    r, frame2 = cv2.threshold(frame1,0,255,cv2.THRESH_BINARY+cv2.THRESH_OTSU)
-    frame3 = cv2.GaussianBlur(frame2,(21,21),0)
-    # ---------------------------
+    mtInitialized = False
 
-    cv2.line(frame, (int(smoothCenter[0]), 0), (int(smoothCenter[0]), frame_height//imageScaledown), (0, 255, 255), 2)
-    cv2.line(frame, (0, int(smoothCenter[1])), (frame_width//imageScaledown, int(smoothCenter[1])), (0, 255, 255), 2)
+    current_frame = 0
 
-    cleanFrame = cv2.cvtColor(cleanFrame, cv2.COLOR_GRAY2BGR)
-    frame_mask = cv2.cvtColor(frame_mask, cv2.COLOR_GRAY2BGR)
+    while True:
+        current_frame += 1
+        if current_frame % frameSkips != 0:
+            continue
+        ret, frame = video.read()
+        if frame is None:
+            break
+        frame = cv2.resize(frame, [frame_width//imageScaledown, frame_height//imageScaledown])
 
-    bboxFrame = cleanFrame.copy()
-    controlFrame = cleanFrame.copy()
-    shape_height, shape_width = frame.shape[:2]
+        if not ret:
+            print('something went wrong')
+            break
+        
+        cleanFrame = procImgClr(frame)
 
-    first_coords = [0, 0]
-    last_coords = [0, 0]
+        histo = drawHistogram(cleanFrame)
+        motionCenter = findAverageOfPixels(cleanFrame)
+        smoothCenter = motionCenter.copy()
+        if lastTargetPos != [0, 0] and motionCenter != [0, 0]:
+            smoothCenter[0] = (dragWeight * motionCenter[0]) + ((1-dragWeight) * lastTargetPos[0])
+            smoothCenter[1] = (dragWeight * motionCenter[1]) + ((1-dragWeight) * lastTargetPos[1])
+        lastTargetPos = smoothCenter
 
-    # Compass directions - up, right, down, left
-    controlOut = [0,0,0,0]
+        timer = cv2.getTickCount()
+        fps = cv2.getTickFrequency() / (cv2.getTickCount() - timer)
 
-    if smoothCenter != [0,0]:
-        xMoveZone = moveBounds[0] * shape_width
-        controlOut[1] = max(smoothCenter[0] - (shape_width - xMoveZone), 0) / xMoveZone
-        controlOut[3] = max(xMoveZone - smoothCenter[0], 0) / xMoveZone
+        # Recreate processing frames
+        cv2.convertScaleAbs(frame, 2)
+        frame_HSV = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+        frame_mask = cv2.inRange(frame_HSV, (120, 120, 80), (170, 240, 255))
+        frame1 = cv2.GaussianBlur(frame_mask,(15,15),0)
+        r, frame2 = cv2.threshold(frame1,0,255,cv2.THRESH_BINARY+cv2.THRESH_OTSU)
+        frame3 = cv2.GaussianBlur(frame2,(21,21),0)
+        # ---------------------------
 
-        yMoveZone = moveBounds[1] * shape_height
-        controlOut[0] = max(yMoveZone - smoothCenter[1], 0) / yMoveZone
-        controlOut[2] = max(smoothCenter[1] - (shape_height - yMoveZone), 0) / yMoveZone
+        cv2.line(frame, (int(smoothCenter[0]), 0), (int(smoothCenter[0]), frame_height//imageScaledown), (0, 255, 255), 2)
+        cv2.line(frame, (0, int(smoothCenter[1])), (frame_width//imageScaledown, int(smoothCenter[1])), (0, 255, 255), 2)
 
-    cv2.putText(controlFrame, '%.2f' % controlOut[0], (shape_width//2 - 30,shape_height//10), 
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.75,(255,255,255),2)
-    cv2.putText(controlFrame, '%.2f' % controlOut[1], (shape_width - shape_width//10 - 15,shape_height//2), 
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.75,(255,255,255),2)
-    cv2.putText(controlFrame, '%.2f' % controlOut[2], (shape_width//2 - 30,shape_height - 15), 
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.75,(255,255,255),2)
-    cv2.putText(controlFrame, '%.2f' % controlOut[3], (10,shape_height//2), 
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.75,(255,255,255),2)
+        cleanFrame = cv2.cvtColor(cleanFrame, cv2.COLOR_GRAY2BGR)
+        frame_mask = cv2.cvtColor(frame_mask, cv2.COLOR_GRAY2BGR)
+
+        bboxFrame = cleanFrame.copy()
+        controlFrame = cleanFrame.copy()
+        shape_height, shape_width = frame.shape[:2]
+
+        first_coords = [0, 0]
+        last_coords = [0, 0]
+
+        # Compass directions - up, right, down, left
+        controlOut = [0,0,0,0]
+
+        if smoothCenter != [0,0]:
+            xMoveZone = moveBounds[0] * shape_width
+            controlOut[1] = max(smoothCenter[0] - (shape_width - xMoveZone), 0) / xMoveZone
+            controlOut[3] = max(xMoveZone - smoothCenter[0], 0) / xMoveZone
+
+            yMoveZone = moveBounds[1] * shape_height
+            controlOut[0] = max(yMoveZone - smoothCenter[1], 0) / yMoveZone
+            controlOut[2] = max(smoothCenter[1] - (shape_height - yMoveZone), 0) / yMoveZone
+
+        cv2.putText(controlFrame, '%.2f' % controlOut[0], (shape_width//2 - 30,shape_height//10), 
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.75,(255,255,255),2)
+        cv2.putText(controlFrame, '%.2f' % controlOut[1], (shape_width - shape_width//10 - 15,shape_height//2), 
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.75,(255,255,255),2)
+        cv2.putText(controlFrame, '%.2f' % controlOut[2], (shape_width//2 - 30,shape_height - 15), 
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.75,(255,255,255),2)
+        cv2.putText(controlFrame, '%.2f' % controlOut[3], (10,shape_height//2), 
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.75,(255,255,255),2)
     
-    for x in range(shape_width):
-        hx = int((histo[0][x] * frame_height))
+        for x in range(shape_width):
+            hx = int((histo[0][x] * frame_height))
 
-        if hx > histo[2][0] * 0.1:
-            last_coords[0] = x
-            if first_coords[0] == 0:
-                first_coords[0] = x
+            if hx > histo[2][0] * 0.1:
+                last_coords[0] = x
+                if first_coords[0] == 0:
+                    first_coords[0] = x
 
-        cv2.circle(bboxFrame, (x, hx), 1, (255, 255, 0), 2)
+            cv2.circle(bboxFrame, (x, hx), 1, (255, 255, 0), 2)
 
-    for y in range(shape_height):
-        hy = int((histo[1][y] * frame_width))
+        for y in range(shape_height):
+            hy = int((histo[1][y] * frame_width))
 
-        if hy > histo[2][1] * 0.1:
-            last_coords[1] = y
-            if first_coords[1] == 0:
-                first_coords[1] = y
+            if hy > histo[2][1] * 0.1:
+                last_coords[1] = y
+                if first_coords[1] == 0:
+                    first_coords[1] = y
 
-        cv2.circle(bboxFrame, (hy, y), 1, (0, 255, 255), 2)
+            cv2.circle(bboxFrame, (hy, y), 1, (0, 255, 255), 2)
 
-    diffX = last_coords[0] - first_coords[0]
-    diffY = last_coords[1] - first_coords[1]
-    dist = max(diffX, diffY) / min(shape_width, shape_height)
+        diffX = last_coords[0] - first_coords[0]
+        diffY = last_coords[1] - first_coords[1]
+        dist = max(diffX, diffY)
+        if lastObjDist != 0:
+            dist = int((dist * dragWeight) + (lastObjDist * (1-dragWeight)))
+        lastObjDist = dist
        
-    cv2.line(controlFrame, (int(moveBounds[0] * shape_width), 0), (int(moveBounds[0] * shape_width), frame_height//imageScaledown), (0, 100, 255), 2)
-    cv2.line(controlFrame, (int(shape_width - (moveBounds[0] * shape_width)), 0), (int(shape_width - (moveBounds[0] * shape_width)), frame_height//imageScaledown), (0, 100, 255), 2)
-    cv2.line(controlFrame, (0, int(moveBounds[1] * shape_height)), (frame_width//imageScaledown, int(moveBounds[1] * shape_height)), (0, 100, 255), 2)
-    cv2.line(controlFrame, (0, int(shape_height - (moveBounds[1] * shape_height))), (frame_width//imageScaledown, int(shape_height - (moveBounds[1] * shape_height))), (0, 100, 255), 2)
-    cv2.line(controlFrame, (int(smoothCenter[0]), 0), (int(smoothCenter[0]), frame_height//imageScaledown), (0, 255, 255), 2)
-    cv2.line(controlFrame, (0, int(smoothCenter[1])), (frame_width//imageScaledown, int(smoothCenter[1])), (0, 255, 255), 2)
+        cv2.line(controlFrame, (int(moveBounds[0] * shape_width), 0), (int(moveBounds[0] * shape_width), frame_height//imageScaledown), (0, 100, 255), 2)
+        cv2.line(controlFrame, (int(shape_width - (moveBounds[0] * shape_width)), 0), (int(shape_width - (moveBounds[0] * shape_width)), frame_height//imageScaledown), (0, 100, 255), 2)
+        cv2.line(controlFrame, (0, int(moveBounds[1] * shape_height)), (frame_width//imageScaledown, int(moveBounds[1] * shape_height)), (0, 100, 255), 2)
+        cv2.line(controlFrame, (0, int(shape_height - (moveBounds[1] * shape_height))), (frame_width//imageScaledown, int(shape_height - (moveBounds[1] * shape_height))), (0, 100, 255), 2)
+        cv2.line(controlFrame, (int(smoothCenter[0]), 0), (int(smoothCenter[0]), frame_height//imageScaledown), (0, 255, 255), 2)
+        cv2.line(controlFrame, (0, int(smoothCenter[1])), (frame_width//imageScaledown, int(smoothCenter[1])), (0, 255, 255), 2)
 
-    p1 = (int(first_coords[0]), int(first_coords[1]))
-    p2 = (int(last_coords[0]), int(last_coords[1]))
-    cv2.rectangle(bboxFrame, p1, p2, (255,50,50), 2, 1)
-    cv2.circle(bboxFrame, (int(smoothCenter[0]), int(smoothCenter[1])), max(diffX, diffY) // 2, (255, 100, 0), 2)
-    cv2.putText(bboxFrame, '%.2f' % dist, (shape_width - 60, shape_height - 15), 
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.75,(255,255,255),2)
+        p1 = (int(first_coords[0]), int(first_coords[1]))
+        p2 = (int(last_coords[0]), int(last_coords[1]))
+        cv2.rectangle(bboxFrame, p1, p2, (255,50,50), 2, 1)
+        cv2.circle(bboxFrame, (int(smoothCenter[0]), int(smoothCenter[1])), dist // 2, (255, 100, 0), 2)
+        cv2.putText(bboxFrame, '%.2f' % (dist / min(shape_width, shape_height)), (shape_width - 60, shape_height - 15), 
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.75,(255,255,255),2)
 
-    rad = int(np.sqrt(((motionCenter[0] - smoothCenter[0]) ** 2) + ((motionCenter[1] - smoothCenter[1]) ** 2)))
+        rad = int(np.sqrt(((motionCenter[0] - smoothCenter[0]) ** 2) + ((motionCenter[1] - smoothCenter[1]) ** 2)))
 
-    cv2.line(cleanFrame, (int(motionCenter[0]), 0), (int(motionCenter[0]), frame_height//imageScaledown), (0, 0, 255), 2)
-    cv2.line(cleanFrame, (0, int(motionCenter[1])), (frame_width//imageScaledown, int(motionCenter[1])), (0, 0, 255), 2)
-    cv2.line(cleanFrame, (int(motionCenter[0]), int(motionCenter[1])), (int(smoothCenter[0]), int(smoothCenter[1])), (0, 255, 0), 2)
-    cv2.circle(cleanFrame, (int(smoothCenter[0]), int(smoothCenter[1])), rad, (0, 255, 0), 2)
+        cv2.line(cleanFrame, (int(motionCenter[0]), 0), (int(motionCenter[0]), frame_height//imageScaledown), (0, 0, 255), 2)
+        cv2.line(cleanFrame, (0, int(motionCenter[1])), (frame_width//imageScaledown, int(motionCenter[1])), (0, 0, 255), 2)
+        cv2.line(cleanFrame, (int(motionCenter[0]), int(motionCenter[1])), (int(smoothCenter[0]), int(smoothCenter[1])), (0, 255, 0), 2)
+        cv2.circle(cleanFrame, (int(smoothCenter[0]), int(smoothCenter[1])), rad, (0, 255, 0), 2)
 
-    #cv2.imshow("1. Raw Footage", frame)
-    #cv2.imshow("2. Convert to HSV", frame_HSV)
-    #cv2.imshow("3. Color Mask", frame_mask)
-    #cv2.imshow("4. First Blur", frame1)
-    #cv2.imshow("5. Threshold", frame2)
-    #cv2.imshow("6. Second Blur", frame3)
-    #cv2.imshow("7. Find Target", cleanFrame)
-    #cv2.imshow("8. Draw Bounding Box", bboxFrame)
-    #cv2.imshow("9. Output Controls", controlFrame)
+        row1 = np.hstack([frame, frame_HSV, frame_mask])
+        row2 = np.hstack([frame1, frame2, frame3])
+        row3 = np.hstack([cleanFrame, bboxFrame, controlFrame])
 
-    row1 = np.hstack([frame, frame_HSV, frame_mask])
-    row2 = np.hstack([frame1, frame2, frame3])
-    row3 = np.hstack([cleanFrame, bboxFrame, controlFrame])
+        row2 = cv2.cvtColor(row2, cv2.COLOR_GRAY2BGR)
+        collage = np.vstack([row1, row2, row3])
 
-    row2 = cv2.cvtColor(row2, cv2.COLOR_GRAY2BGR)
-    collage = np.vstack([row1, row2, row3])
+        cv2.imshow("Object Tracking", collage)
 
-    cv2.imshow("Object Tracking", collage)
+        trackerOutput.write(collage)
 
-    output.write(frame)
-    trackerOutput.write(collage)
-
-    k = cv2.waitKey(1) & 0xff
-    if k == 27 : break
+        k = cv2.waitKey(1) & 0xff
+        if k == 27 : break
             
-video.release()
-output.release()
-trackerOutput.release()
-cv2.destroyAllWindows()
+    video.release()
+    trackerOutput.release()
+    cv2.destroyAllWindows()
+
+for i in range(6,7):
+    inName = "test_video" + str(i) + ".mp4"
+    outName = "Tracker_" + str(i) + ".mp4"
+    trackVideo(inName, outName)
