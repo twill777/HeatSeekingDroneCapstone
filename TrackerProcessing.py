@@ -10,9 +10,9 @@ def procImgClr(frame, low_h, low_s, low_v, high_h, high_s, high_v):
 
 #proecess a B/W image
 def procImg(frame):
-    frame = cv2.GaussianBlur(frame,(15,15),0)
+    frame = cv2.GaussianBlur(frame,(33,33), cv2.BORDER_CONSTANT)
     r, frame = cv2.threshold(frame,0,255,cv2.THRESH_BINARY+cv2.THRESH_OTSU)
-    frame = cv2.GaussianBlur(frame,(21,21),0)
+    frame = cv2.GaussianBlur(frame,(67,67),0)
     return frame
 
 
@@ -23,8 +23,8 @@ def procInBounds(frame, low_h, low_s, low_v, high_h, high_s, high_v):
 
     # Threshold based on bounds then convert to BGR
     if low_h > high_h:
-        frame_threshold_low = cv2.inRange(frame_HSV, (0, low_s, low_v), (low_h, high_s, high_v))
-        frame_threshold_high = cv2.inRange(frame_HSV, (high_h, low_s, low_v), (180, high_s, high_v))
+        frame_threshold_low = cv2.inRange(frame_HSV, (0, low_s, low_v), (high_h, high_s, high_v))
+        frame_threshold_high = cv2.inRange(frame_HSV, (low_h, low_s, low_v), (180, high_s, high_v))
         frame_threshold = cv2.addWeighted(frame_threshold_low, 1, frame_threshold_high, 1, 0)
     else:
         frame_threshold = cv2.inRange(frame_HSV, (low_h, low_s, low_v), (high_h, high_s, high_v))

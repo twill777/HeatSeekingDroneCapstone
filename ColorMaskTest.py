@@ -24,15 +24,19 @@ high_V_name = 'High V'
 
 mouse = Controller()
 centerCoords = [0, 0]
-shownFrame = 0
+shownFrame = 3
 radius = 20
 
-marginh = 20
-margins = 40
-marginv = 20
-hshift = 10
-sshift = 15
-vshift = 2
+editLowBound = 0
+
+baseMargins = [10,40,20]
+
+marginh = baseMargins[0]
+margins = baseMargins[1]
+marginv = baseMargins[2]
+hshift = 5
+sshift = 5
+vshift = 5
 
 colorPicker = np.zeros((1, 1, 3), np.uint8)
 colorPickerLow = np.zeros((1, 1, 3), np.uint8)
@@ -50,13 +54,16 @@ def on_mouse(event,x,y,flags,param):
 
     # Set bounds based on colors where the mouse had clicked
     if event == cv2.EVENT_LBUTTONDOWN and shownFrame == 3:
-        shownFrame = 1
+        shownFrame = 2
         global low_H
         global low_S
         global low_V
         global high_H
         global high_S
         global high_V
+        global marginh
+        global margins
+        global marginv
 
         # Convert color picker to HSV
         colorPicker_HSV = cv2.cvtColor(colorPicker, cv2.COLOR_BGR2HSV)
@@ -68,12 +75,16 @@ def on_mouse(event,x,y,flags,param):
         mv = v[v > 0].mean()
 
         high_H = (mh + marginh) % max_value_H
-        high_S = (ms + margins) % max_value
-        high_V = (mv + marginv) % max_value
+        high_S = min(max_value, (ms + margins))
+        high_V = min(max_value, (mv + marginv))
 
         low_H = (mh - marginh) % max_value_H
-        low_S = (ms - margins) % max_value
-        low_V = (mv - marginv) % max_value
+        low_S = max(0, (ms - margins))
+        low_V = max(0, (mv - marginv))
+
+        marginh = baseMargins[0]
+        margins = baseMargins[1]
+        marginv = baseMargins[2]
 
 #cap = cv2.VideoCapture("test_video5.mp4")
 cap = cv2.VideoCapture(0)
@@ -116,20 +127,42 @@ while True:
     mr = r[r > 0].mean()
 
     # Draw the mean color of the circle around the mouse onto the render frame
-    frame = cv2.circle(frame, centerCoords, radius, (mb, mg, mr), -1)
+    framePicker = frame.copy()
+    framePicker = cv2.circle(framePicker, centerCoords, radius, (mb, mg, mr), -1)
 
     cv2.namedWindow(window_capture_name)
     cv2.setMouseCallback(window_capture_name, on_mouse, window_capture_name)
     cv2.setMouseCallback(window_capture_name, on_mouse, window_capture_name)
 
+    frame_threshold_output = cv2.cvtColor(frame_threshold_proc, cv2.COLOR_GRAY2BGR)
+
+    for f in [frame_filteredColor, frame_threshold_output]:
+        cv2.putText(f, 'High H: %.0f' % high_H, (10, 25),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255 * editLowBound, 255 * editLowBound, 255), 2)
+
+        cv2.putText(f, 'Low H: %.0f' % low_H, (10, 50),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255 * (1 - editLowBound), 255 * (1 - editLowBound), 255), 2)
+
+        cv2.putText(f, 'High S: %.0f' % high_S, (180, 25),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255 * editLowBound, 255 * editLowBound, 255), 2)
+
+        cv2.putText(f, 'Low S: %.0f' % low_S, (180, 50),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255 * (1 - editLowBound), 255 * (1 - editLowBound), 255), 2)
+
+        cv2.putText(f, 'High V: %.0f' % high_V, (350, 25),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255 * editLowBound, 255 * editLowBound, 255), 2)
+
+        cv2.putText(f, 'Low V: %.0f' % low_V, (350, 50),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255 * (1 - editLowBound), 255 * (1 - editLowBound), 255), 2)
+
     if shownFrame == 0:
         cv2.imshow(window_capture_name, trackFrame(frame, frame_threshold_proc))
     elif shownFrame == 1:
-        cv2.imshow(window_capture_name, frame_threshold_proc)
+        cv2.imshow(window_capture_name, frame_threshold_output)
     elif shownFrame == 2:
         cv2.imshow(window_capture_name, frame_filteredColor)
     elif shownFrame == 3:
-        cv2.imshow(window_capture_name, frame)
+        cv2.imshow(window_capture_name, framePicker)
 
     key = cv2.waitKey(30)
     if key == 27:
@@ -147,29 +180,30 @@ while True:
         shownFrame = 3
 
     if key == ord('h'):
-        marginh -= hshift
-        high_H = (high_H - hshift) % max_value
-        low_H = (low_H + hshift) % max_value_H
+        high_H = (high_H - (hshift * (1 - editLowBound))) % max_value_H
+        low_H = (low_H - (hshift * editLowBound)) % max_value_H
     if key == ord('u'):
-        marginh += hshift
-        high_H = (high_H + hshift) % max_value
-        low_H = (low_H - hshift) % max_value_H
+        high_H = (high_H + (hshift * (1 - editLowBound))) % max_value_H
+        low_H = (low_H + (hshift * editLowBound)) % max_value_H
     if key == ord('j'):
-        margins -= sshift
-        high_S = (high_S - sshift) % max_value
-        low_S = (low_S + sshift) % max_value_H
+        high_S = max(low_S + 1, high_S - (sshift * (1 - editLowBound)))
+        low_S = max(0, low_S - (sshift * editLowBound))
     if key == ord('i'):
-        margins += sshift
-        high_S = (high_S + sshift) % max_value
-        low_S = (low_S - sshift) % max_value_H
+        high_S = min(max_value, high_S + (sshift * (1 - editLowBound)))
+        low_S = min(high_S - 1, low_S + (sshift * editLowBound))
     if key == ord('k'):
-        marginv -= vshift
-        high_V = (high_V - vshift) % max_value
-        low_V = (low_V + vshift) % max_value_H
+        high_V = max(low_V + 1, high_V - (vshift * (1 - editLowBound)))
+        low_V = max(0, low_V - (vshift * editLowBound))
     if key == ord('o'):
-        marginv += vshift
-        high_V = (high_V + vshift) % max_value
-        low_V = (low_V - vshift) % max_value_H
+        high_V = min(max_value, high_V + (vshift * (1 - editLowBound)))
+        low_V = min(high_V - 1, low_V + (vshift * editLowBound))
+
+    if key == ord('t'):
+        editLowBound = 1 - editLowBound
+    if key == ord('f'):
+        temp = high_H
+        high_H = low_H
+        low_H = temp
 
     if key == ord('s'):
         radius -= 1
