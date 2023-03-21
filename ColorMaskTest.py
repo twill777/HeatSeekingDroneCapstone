@@ -3,6 +3,7 @@ import cv2
 import argparse
 import numpy as np
 from pynput.mouse import Controller
+from TrackerProcessing import *
 
 max_value = 255
 max_value_H = 360//2
@@ -23,8 +24,15 @@ high_V_name = 'High V'
 
 mouse = Controller()
 centerCoords = [0, 0]
-showColor = True
+shownFrame = 0
 radius = 20
+
+marginh = 20
+margins = 40
+marginv = 20
+hshift = 10
+sshift = 15
+vshift = 2
 
 colorPicker = np.zeros((1, 1, 3), np.uint8)
 colorPickerLow = np.zeros((1, 1, 3), np.uint8)
@@ -32,45 +40,8 @@ colorPickerLow = np.zeros((1, 1, 3), np.uint8)
 imageScaledown = 4
 lastTargetPos = [0, 0]
 
-def on_low_H_thresh_trackbar(val):
-    global low_H
-    global high_H
-    low_H = val
-    low_H = min(high_H-1, low_H)
-    cv2.setTrackbarPos(low_H_name, window_detection_name, low_H)
-def on_high_H_thresh_trackbar(val):
-    global low_H
-    global high_H
-    high_H = val
-    high_H = max(high_H, low_H+1)
-    cv2.setTrackbarPos(high_H_name, window_detection_name, high_H)
-def on_low_S_thresh_trackbar(val):
-    global low_S
-    global high_S
-    low_S = val
-    low_S = min(high_S-1, low_S)
-    cv2.setTrackbarPos(low_S_name, window_detection_name, low_S)
-def on_high_S_thresh_trackbar(val):
-    global low_S
-    global high_S
-    high_S = val
-    high_S = max(high_S, low_S+1)
-    cv2.setTrackbarPos(high_S_name, window_detection_name, high_S)
-def on_low_V_thresh_trackbar(val):
-    global low_V
-    global high_V
-    low_V = val
-    low_V = min(high_V-1, low_V)
-    cv2.setTrackbarPos(low_V_name, window_detection_name, low_V)
-def on_high_V_thresh_trackbar(val):
-    global low_V
-    global high_V
-    high_V = val
-    high_V = max(high_V, low_V+1)
-    cv2.setTrackbarPos(high_V_name, window_detection_name, high_V)
-
 def on_mouse(event,x,y,flags,param):
-    global showColor
+    global shownFrame
 
     # Update mouse coords whenever it moves for circle drawing
     if event == cv2.EVENT_MOUSEMOVE:
@@ -78,8 +49,8 @@ def on_mouse(event,x,y,flags,param):
         centerCoords[1] = y
 
     # Set bounds based on colors where the mouse had clicked
-    if event == cv2.EVENT_LBUTTONDOWN and not showColor:
-        showColor = True
+    if event == cv2.EVENT_LBUTTONDOWN and shownFrame == 3:
+        shownFrame = 1
         global low_H
         global low_S
         global low_V
@@ -96,10 +67,6 @@ def on_mouse(event,x,y,flags,param):
         ms = s[s > 0].mean()
         mv = v[v > 0].mean()
 
-        marginh = 20
-        margins = 40
-        marginv = 20
-
         high_H = (mh + marginh) % max_value_H
         high_S = (ms + margins) % max_value
         high_V = (mv + marginv) % max_value
@@ -108,74 +75,12 @@ def on_mouse(event,x,y,flags,param):
         low_S = (ms - margins) % max_value
         low_V = (mv - marginv) % max_value
 
-        print(low_H, low_S, low_V)
-        print(high_H, high_S, high_V)
-        print('-')
-
-
-
-def findAverageOfPixels(frame):
-    extraScaledown = 4
-    frame_height, frame_width = frame.shape[:2]
-    frame = cv2.resize(frame, [frame_width//extraScaledown, frame_height//extraScaledown])
-    frame_height, frame_width = frame.shape[:2]
-    xAvg = 0
-    yAvg = 0
-
-    whiteCount = 0
-
-    for y in range(frame_width):
-        for x in range(frame_height):
-            p = frame[x, y]
-            if p > 0:
-                xAvg += x
-                yAvg += y
-                whiteCount += 1
-
-    if whiteCount == 0:
-        whiteCount = 1
-
-    return [(yAvg * extraScaledown) // whiteCount, (xAvg * extraScaledown) // whiteCount]
-
-
-def trackFrame(frame, threshold):
-    global lastTargetPos
-    dragWeight = 0.1
-    frame_height, frame_width = frame.shape[:2]
-
-    threshold = cv2.resize(frame, [frame_width//imageScaledown, frame_height//imageScaledown])
-
-    motionCenter = findAverageOfPixels(threshold)
-    smoothCenter = motionCenter.copy()
-    if lastTargetPos != [0, 0] and motionCenter != [0, 0]:
-        smoothCenter[0] = (dragWeight * motionCenter[0]) + ((1-dragWeight) * lastTargetPos[0])
-        smoothCenter[1] = (dragWeight * motionCenter[1]) + ((1-dragWeight) * lastTargetPos[1])
-    lastTargetPos = smoothCenter
-
-    cv2.line(frame, (int(smoothCenter[0]), 0), (int(smoothCenter[0]), frame_height//imageScaledown), (0, 255, 255), 2)
-    cv2.line(frame, (0, int(smoothCenter[1])), (frame_width//imageScaledown, int(smoothCenter[1])), (0, 255, 255), 2)
-
-    return frame
-
-
-parser = argparse.ArgumentParser(description='Code for Thresholding Operations using inRange tutorial.')
-parser.add_argument('--camera', help='Camera divide number.', default=0, type=int)
-args = parser.parse_args()
-cv2.namedWindow(window_capture_name)
-cv2.namedWindow(window_detection_name)
-cv2.createTrackbar(low_H_name, window_detection_name , low_H, max_value_H, on_low_H_thresh_trackbar)
-cv2.createTrackbar(high_H_name, window_detection_name , high_H, max_value_H, on_high_H_thresh_trackbar)
-cv2.createTrackbar(low_S_name, window_detection_name , low_S, max_value, on_low_S_thresh_trackbar)
-cv2.createTrackbar(high_S_name, window_detection_name , high_S, max_value, on_high_S_thresh_trackbar)
-cv2.createTrackbar(low_V_name, window_detection_name , low_V, max_value, on_low_V_thresh_trackbar)
-cv2.createTrackbar(high_V_name, window_detection_name , high_V, max_value, on_high_V_thresh_trackbar)
-
-cap = cv2.VideoCapture("test_video5.mp4")
-#cap = cv2.VideoCapture(0)
+#cap = cv2.VideoCapture("test_video5.mp4")
+cap = cv2.VideoCapture(0)
 
 # Check if the webcam is opened correctly
-#if not cap.isOpened():
-#    raise IOError("Cannot open webcam")
+if not cap.isOpened():
+    raise IOError("Cannot open webcam")
 
 while True:
     ret, frame = cap.read()
@@ -184,20 +89,8 @@ while True:
 
     frame_width, frame_height = frame.shape[:2]
 
-    # Convert to HSV for thresholding operation
-    frame_HSV = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-
-    # Threshold based on bounds then convert to BGR
-    if low_H > high_H:
-        frame_threshold_low = cv2.inRange(frame_HSV, (0, low_S, low_V), (low_H, high_S, high_V))
-        frame_threshold_high = cv2.inRange(frame_HSV, (high_H, low_S, low_V), (180, high_S, high_V))
-        frame_threshold = cv2.addWeighted(frame_threshold_low, 1, frame_threshold_high, 1, 0)
-        #frame_threshold = cv2.cvtColor(frame_threshold, cv2.COLOR_GRAY2BGR)
-        #frame_threshold = cv2.bitwise_and(frame, frame_threshold)
-        #frame_threshold = cv2.cvtColor(frame_threshold, cv2.COLOR_BGR2HSV)
-        #frame_threshold = cv2.inRange(frame_threshold, (high_H, low_S, low_V), (180, high_S, high_V))
-    else:
-        frame_threshold = cv2.inRange(frame_HSV, (low_H, low_S, low_V), (high_H, high_S, high_V))
+    frame_threshold = procInBounds(frame, low_H, low_S, low_V, high_H, high_S, high_V)
+    frame_threshold_proc = procImg(frame_threshold)
 
     frame_threshold_color = cv2.cvtColor(frame_threshold, cv2.COLOR_GRAY2BGR)
 
@@ -209,9 +102,6 @@ while True:
 
     # Draw a white circle over the mouse on the black frame
     mask = cv2.circle(colorPicker, centerCoords, radius, (255, 255, 255), -1)
-    
-    # Blur frame ( UNUSED)
-    frame_blur = cv2.GaussianBlur(frame,(35,35),0)
 
     # Multiply the frame by the mask, so that colorPicker is a black frame with a circle window matching what's on "frame" at that point
     colorPicker = cv2.bitwise_and(frame, mask)
@@ -232,17 +122,55 @@ while True:
     cv2.setMouseCallback(window_capture_name, on_mouse, window_capture_name)
     cv2.setMouseCallback(window_capture_name, on_mouse, window_capture_name)
 
-    if showColor:
-        cv2.imshow(window_capture_name, trackFrame(frame, frame_threshold))
-    else:
+    if shownFrame == 0:
+        cv2.imshow(window_capture_name, trackFrame(frame, frame_threshold_proc))
+    elif shownFrame == 1:
+        cv2.imshow(window_capture_name, frame_threshold_proc)
+    elif shownFrame == 2:
+        cv2.imshow(window_capture_name, frame_filteredColor)
+    elif shownFrame == 3:
         cv2.imshow(window_capture_name, frame)
 
     key = cv2.waitKey(30)
-    if key == ord('q') or key == 27:
+    if key == 27:
         break
 
     if key == ord(' '):
-        showColor = not showColor
+        shownFrame = shownFrame + 1 % 4
+    if key == ord('1'):
+        shownFrame = 0
+    if key == ord('2'):
+        shownFrame = 1
+    if key == ord('3'):
+        shownFrame = 2
+    if key == ord('4'):
+        shownFrame = 3
+
+    if key == ord('h'):
+        marginh -= hshift
+        high_H = (high_H - hshift) % max_value
+        low_H = (low_H + hshift) % max_value_H
+    if key == ord('u'):
+        marginh += hshift
+        high_H = (high_H + hshift) % max_value
+        low_H = (low_H - hshift) % max_value_H
+    if key == ord('j'):
+        margins -= sshift
+        high_S = (high_S - sshift) % max_value
+        low_S = (low_S + sshift) % max_value_H
+    if key == ord('i'):
+        margins += sshift
+        high_S = (high_S + sshift) % max_value
+        low_S = (low_S - sshift) % max_value_H
+    if key == ord('k'):
+        marginv -= vshift
+        high_V = (high_V - vshift) % max_value
+        low_V = (low_V + vshift) % max_value_H
+    if key == ord('o'):
+        marginv += vshift
+        high_V = (high_V + vshift) % max_value
+        low_V = (low_V - vshift) % max_value_H
+
     if key == ord('s'):
         radius -= 1
     if key == ord('w'):
