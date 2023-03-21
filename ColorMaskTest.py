@@ -4,7 +4,6 @@ import argparse
 import numpy as np
 from pynput.mouse import Controller
 
-
 max_value = 255
 max_value_H = 360//2
 low_H = 0
@@ -29,6 +28,9 @@ radius = 20
 
 colorPicker = np.zeros((1, 1, 3), np.uint8)
 colorPickerLow = np.zeros((1, 1, 3), np.uint8)
+
+imageScaledown = 4
+lastTargetPos = [0, 0]
 
 def on_low_H_thresh_trackbar(val):
     global low_H
@@ -70,10 +72,12 @@ def on_high_V_thresh_trackbar(val):
 def on_mouse(event,x,y,flags,param):
     global showColor
 
+    # Update mouse coords whenever it moves for circle drawing
     if event == cv2.EVENT_MOUSEMOVE:
         centerCoords[0] = x
         centerCoords[1] = y
 
+    # Set bounds based on colors where the mouse had clicked
     if event == cv2.EVENT_LBUTTONDOWN and not showColor:
         showColor = True
         global low_H
@@ -83,23 +87,75 @@ def on_mouse(event,x,y,flags,param):
         global high_S
         global high_V
 
+        # Convert color picker to HSV
         colorPicker_HSV = cv2.cvtColor(colorPicker, cv2.COLOR_BGR2HSV)
-        
-        margin = 15
-        hHi,sHi,vHi = cv2.split(colorPicker_HSV)
-        high_H = min(180,(int(np.max(hHi)-margin) * max_value_H) // max_value)
-        high_S = min(255,int(np.max(sHi))-margin)
-        high_V = min(255,int(np.max(vHi))-margin)
 
-        colorPickerLow_HSV = cv2.cvtColor(colorPickerLow, cv2.COLOR_BGR2HSV)
-        hLo, sLo, vLo = cv2.split(colorPickerLow_HSV)
-        low_H = max(0,(int(np.min(hLo)-margin) * max_value_H) // max_value)
-        low_S = max(0,int(np.min(sLo))-margin)
-        low_V = max(0,int(np.min(vLo))-margin)
+        # Extract the mean h, s, and v channels from the masked circle
+        h, s, v = cv2.split(colorPicker_HSV)
+        mh = h[h > 0].mean()
+        ms = s[s > 0].mean()
+        mv = v[v > 0].mean()
+
+        marginh = 20
+        margins = 40
+        marginv = 20
+
+        high_H = (mh + marginh) % max_value_H
+        high_S = (ms + margins) % max_value
+        high_V = (mv + marginv) % max_value
+
+        low_H = (mh - marginh) % max_value_H
+        low_S = (ms - margins) % max_value
+        low_V = (mv - marginv) % max_value
 
         print(low_H, low_S, low_V)
         print(high_H, high_S, high_V)
         print('-')
+
+
+
+def findAverageOfPixels(frame):
+    extraScaledown = 4
+    frame_height, frame_width = frame.shape[:2]
+    frame = cv2.resize(frame, [frame_width//extraScaledown, frame_height//extraScaledown])
+    frame_height, frame_width = frame.shape[:2]
+    xAvg = 0
+    yAvg = 0
+
+    whiteCount = 0
+
+    for y in range(frame_width):
+        for x in range(frame_height):
+            p = frame[x, y]
+            if p > 0:
+                xAvg += x
+                yAvg += y
+                whiteCount += 1
+
+    if whiteCount == 0:
+        whiteCount = 1
+
+    return [(yAvg * extraScaledown) // whiteCount, (xAvg * extraScaledown) // whiteCount]
+
+
+def trackFrame(frame, threshold):
+    global lastTargetPos
+    dragWeight = 0.1
+    frame_height, frame_width = frame.shape[:2]
+
+    threshold = cv2.resize(frame, [frame_width//imageScaledown, frame_height//imageScaledown])
+
+    motionCenter = findAverageOfPixels(threshold)
+    smoothCenter = motionCenter.copy()
+    if lastTargetPos != [0, 0] and motionCenter != [0, 0]:
+        smoothCenter[0] = (dragWeight * motionCenter[0]) + ((1-dragWeight) * lastTargetPos[0])
+        smoothCenter[1] = (dragWeight * motionCenter[1]) + ((1-dragWeight) * lastTargetPos[1])
+    lastTargetPos = smoothCenter
+
+    cv2.line(frame, (int(smoothCenter[0]), 0), (int(smoothCenter[0]), frame_height//imageScaledown), (0, 255, 255), 2)
+    cv2.line(frame, (0, int(smoothCenter[1])), (frame_width//imageScaledown, int(smoothCenter[1])), (0, 255, 255), 2)
+
+    return frame
 
 
 parser = argparse.ArgumentParser(description='Code for Thresholding Operations using inRange tutorial.')
@@ -128,15 +184,25 @@ while True:
 
     frame_width, frame_height = frame.shape[:2]
 
-    # Convert to HSV
+    # Convert to HSV for thresholding operation
     frame_HSV = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
 
     # Threshold based on bounds then convert to BGR
-    frame_threshold = cv2.inRange(frame_HSV, (low_H, low_S, low_V), (high_H, high_S, high_V))
-    frame_threshold = cv2.cvtColor(frame_threshold, cv2.COLOR_GRAY2BGR)
+    if low_H > high_H:
+        frame_threshold_low = cv2.inRange(frame_HSV, (0, low_S, low_V), (low_H, high_S, high_V))
+        frame_threshold_high = cv2.inRange(frame_HSV, (high_H, low_S, low_V), (180, high_S, high_V))
+        frame_threshold = cv2.addWeighted(frame_threshold_low, 1, frame_threshold_high, 1, 0)
+        #frame_threshold = cv2.cvtColor(frame_threshold, cv2.COLOR_GRAY2BGR)
+        #frame_threshold = cv2.bitwise_and(frame, frame_threshold)
+        #frame_threshold = cv2.cvtColor(frame_threshold, cv2.COLOR_BGR2HSV)
+        #frame_threshold = cv2.inRange(frame_threshold, (high_H, low_S, low_V), (180, high_S, high_V))
+    else:
+        frame_threshold = cv2.inRange(frame_HSV, (low_H, low_S, low_V), (high_H, high_S, high_V))
+
+    frame_threshold_color = cv2.cvtColor(frame_threshold, cv2.COLOR_GRAY2BGR)
 
     # Map color back onto thresholded frame
-    frame_filteredColor = cv2.bitwise_and(frame, frame_threshold)
+    frame_filteredColor = cv2.bitwise_and(frame, frame_threshold_color)
 
     # Create a black frame
     colorPicker = np.zeros((frame_width, frame_height, 3), np.uint8)
@@ -147,25 +213,19 @@ while True:
     # Blur frame ( UNUSED)
     frame_blur = cv2.GaussianBlur(frame,(35,35),0)
 
-    # Create a copy of the black-frame-white-circle
-    colorPickerLow = colorPicker.copy()
-
     # Multiply the frame by the mask, so that colorPicker is a black frame with a circle window matching what's on "frame" at that point
     colorPicker = cv2.bitwise_and(frame, mask)
     
     # Invert the frame colors
     frame_flipped = cv2.bitwise_not(frame)
 
-    # Multiply the frame by the mask again, then invert it so is a white frame with a circle window matching what's on "frame" at that point
-    colorPickerLow = cv2.bitwise_and(frame_flipped, mask)
-    colorPickerLow = cv2.bitwise_not(colorPickerLow)
-
-
+    # Extract the mean blue, red, and green channels from the masked circle
     b, g, r = cv2.split(colorPicker)
     mb = b[b > 0].mean()
     mg = g[g > 0].mean()
     mr = r[r > 0].mean()
 
+    # Draw the mean color of the circle around the mouse onto the render frame
     frame = cv2.circle(frame, centerCoords, radius, (mb, mg, mr), -1)
 
     cv2.namedWindow(window_capture_name)
@@ -173,9 +233,9 @@ while True:
     cv2.setMouseCallback(window_capture_name, on_mouse, window_capture_name)
 
     if showColor:
-        cv2.imshow(window_capture_name, frame_filteredColor)
+        cv2.imshow(window_capture_name, trackFrame(frame, frame_threshold))
     else:
-        cv2.imshow(window_capture_name, colorPicker)
+        cv2.imshow(window_capture_name, frame)
 
     key = cv2.waitKey(30)
     if key == ord('q') or key == 27:

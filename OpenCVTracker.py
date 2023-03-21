@@ -3,8 +3,8 @@ from matplotlib import pyplot as plt
 import numpy as np
 
 #process a colored image
-def procImgClr(frame):
-    return procImg(procRed(frame))
+def procImgClr(frame, low_h, low_s, low_v, high_h, high_s, high_v):
+    return procImg(procInBounds(frame, low_h, low_s, low_v, high_h, high_s, high_v))
 
 #proecess a B/W image
 def procImg(frame):
@@ -14,12 +14,12 @@ def procImg(frame):
     return frame
 
 
-def procRed(frame):
+def procInBounds(frame, low_h, low_s, low_v, high_h, high_s, high_v):
     cv2.convertScaleAbs(frame, 2)
     frame_height, frame_width = frame.shape[:2]
 
     frame_HSV = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-    frame_mask = cv2.inRange(frame_HSV, (120, 120, 80), (170, 240, 255))
+    frame_mask = cv2.inRange(frame_HSV, (low_h, low_s, low_v), (high_h, high_s, high_v))
 
     return frame_mask
 
@@ -74,8 +74,64 @@ def drawHistogram(frame):
 
     return histogramValues
 
+imageScaledown = 4
+lastTargetPos = [0, 0]
+
+def trackFrame(frame, low_h, low_s, low_v, high_h, high_s, high_v):
+    global lastTargetPos
+    dragWeight = 0.1
+    frame_height, frame_width = frame.shape[:2]
+
+    frame = cv2.resize(frame, [frame_width//imageScaledown, frame_height//imageScaledown])
+    cleanFrame = procImgClr(frame, low_h, low_s, low_v, high_h, high_s, high_v)
+
+    motionCenter = findAverageOfPixels(cleanFrame)
+    smoothCenter = motionCenter.copy()
+    if lastTargetPos != [0, 0] and motionCenter != [0, 0]:
+        smoothCenter[0] = (dragWeight * motionCenter[0]) + ((1-dragWeight) * lastTargetPos[0])
+        smoothCenter[1] = (dragWeight * motionCenter[1]) + ((1-dragWeight) * lastTargetPos[1])
+    lastTargetPos = smoothCenter
+
+    cv2.line(frame, (int(smoothCenter[0]), 0), (int(smoothCenter[0]), frame_height//imageScaledown), (0, 255, 255), 2)
+    cv2.line(frame, (0, int(smoothCenter[1])), (frame_width//imageScaledown, int(smoothCenter[1])), (0, 255, 255), 2)
+
+    return frame
+
 
 def trackVideo(inName, outName):
+    # Only run image processing on each nth frame
+    frameSkips = 25
+
+    video = None
+    video = cv2.VideoCapture(inName)
+    frame = None
+    
+    ret, frame = video.read()
+    if not ret:
+        print('cannot read the video')
+    current_frame = 0
+
+    while True:
+        current_frame += 1
+        if current_frame % frameSkips != 0:
+            continue
+        ret, frame = video.read()
+        if frame is None:
+            break
+        if not ret:
+            print('something went wrong')
+            break
+        
+        cv2.imshow("Object Tracking", trackFrame(frame, 120, 120, 80, 170, 240, 255))
+
+        k = cv2.waitKey(1) & 0xff
+        if k == 27 : break
+            
+    video.release()
+    cv2.destroyAllWindows()
+
+
+def slowTrackVideo(inName, outName):
     imageScaledown = 4
     dragWeight = 0.1
 
