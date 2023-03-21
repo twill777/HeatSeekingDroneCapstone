@@ -89,7 +89,7 @@ def on_mouse(event,x,y,flags,param):
         hHi,sHi,vHi = cv2.split(colorPicker_HSV)
         high_H = min(180,(int(np.max(hHi)-margin) * max_value_H) // max_value)
         high_S = min(255,int(np.max(sHi))-margin)
-        high_V = min(255,(np.max(vHi))-margin)
+        high_V = min(255,int(np.max(vHi))-margin)
 
         colorPickerLow_HSV = cv2.cvtColor(colorPickerLow, cv2.COLOR_BGR2HSV)
         hLo, sLo, vLo = cv2.split(colorPickerLow_HSV)
@@ -128,30 +128,45 @@ while True:
 
     frame_width, frame_height = frame.shape[:2]
 
+    # Convert to HSV
     frame_HSV = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+
+    # Threshold based on bounds then convert to BGR
     frame_threshold = cv2.inRange(frame_HSV, (low_H, low_S, low_V), (high_H, high_S, high_V))
     frame_threshold = cv2.cvtColor(frame_threshold, cv2.COLOR_GRAY2BGR)
+
+    # Map color back onto thresholded frame
     frame_filteredColor = cv2.bitwise_and(frame, frame_threshold)
 
+    # Create a black frame
     colorPicker = np.zeros((frame_width, frame_height, 3), np.uint8)
+
+    # Draw a white circle over the mouse on the black frame
     mask = cv2.circle(colorPicker, centerCoords, radius, (255, 255, 255), -1)
     
+    # Blur frame ( UNUSED)
     frame_blur = cv2.GaussianBlur(frame,(35,35),0)
+
+    # Create a copy of the black-frame-white-circle
     colorPickerLow = colorPicker.copy()
+
+    # Multiply the frame by the mask, so that colorPicker is a black frame with a circle window matching what's on "frame" at that point
     colorPicker = cv2.bitwise_and(frame, mask)
     
+    # Invert the frame colors
     frame_flipped = cv2.bitwise_not(frame)
+
+    # Multiply the frame by the mask again, then invert it so is a white frame with a circle window matching what's on "frame" at that point
     colorPickerLow = cv2.bitwise_and(frame_flipped, mask)
     colorPickerLow = cv2.bitwise_not(colorPickerLow)
 
 
-    h, s, v = cv2.split(colorPicker)
-    mh = h[h > 0].mean()
-    ms = s[s > 0].mean()
-    mv = v[v > 0].mean()
+    b, g, r = cv2.split(colorPicker)
+    mb = b[b > 0].mean()
+    mg = g[g > 0].mean()
+    mr = r[r > 0].mean()
 
-    frame = cv2.circle(frame, centerCoords, radius, (mh, ms, mv), -1)
-    #frame = cv2.circle(frame, centerCoords, radius, (255, 255, 255), -1)
+    frame = cv2.circle(frame, centerCoords, radius, (mb, mg, mr), -1)
 
     cv2.namedWindow(window_capture_name)
     cv2.setMouseCallback(window_capture_name, on_mouse, window_capture_name)
@@ -160,7 +175,7 @@ while True:
     if showColor:
         cv2.imshow(window_capture_name, frame_filteredColor)
     else:
-        cv2.imshow(window_capture_name, frame)
+        cv2.imshow(window_capture_name, colorPicker)
 
     key = cv2.waitKey(30)
     if key == ord('q') or key == 27:
